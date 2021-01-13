@@ -7,7 +7,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Feb 25 10:43:22 2019
- 
+
  
 @author: brooke.wang
 """
@@ -98,42 +98,8 @@ class sql_download(object):
         return self.product_result
 
 
-#设定现有仓库与国家对应清单
-    #de_list为德国仓对应发货国家
-    #cn_list为中国仓对应发货国家
-    #uk_list为英国仓对应发货国家
-    #us_list为美国仓，NP+EI两个仓库对应发货国家
-    #jp_list为日本仓对应发货国家
-    #fb_list_pre为上底仓对应唯一发货国家
-    #fb_list_all为上底仓可发货所有国家
-de_list = ['se','es','si','sk','pt','pl','nl','mt','lu','lt','lv','it','hu','gr','de','fr','fi','ee','dk','cz','hr','bg','be','at','ie']
-cn_list = ['cn']
-uk_list = ['gb']
-us_list = ['us']
-jp_list = ['jp']
-fb_list_pre = ['ae','tw','ch','kr','sg','pr','no','nz','mc','mo','li','id','hk','ca','au']
-fb_list_all = ['gb','se','es','si','sk','pt','pl','nl','mt','lu','lt','lv','it','ie','hu','gr','de','fr','fi','ee','dk','cz','hr','bg','be','at','us','ae','tw','ch','kr','sg','pr','no','nz','mc','mo','li','id','hk','ca','au']
-
-#设定现有仓库清单对应清单
-    #de_warehouse_list 为德国仓清单
-    #cn_warehouse_list 为中国仓清单
-    #uk_warehouse_list 为英国仓清单
-    #us_warehouse_list 为北美仓清单
-    #jp_warehouse_list 为日本仓清单
-    #fb_warehouse_list 为上底仓清单
-
-de_warehouse_list = ['Arvato_DE']
-cn_warehouse_list = ['TM','TM-SH','TM-BJ']
-uk_warehouse_list = ['UK']
-us_warehouse_list = ['NP','EI']
-jp_warehouse_list = ['Nippon_JP']
-fb_warehouse_list = ['Sinotrans_CN']
-
-a=sql_download()
- 
- 
 # 取相关原数据
-#获取cms后台限售产品设置信息：
+#获取cms后台限售产品近3个月销售数据：
     # ID/Variant_ID为原表单ID/Variant_ID
     # set_country为原表单Countries
     # dopms_slug为oms后台对应产品slug
@@ -264,6 +230,13 @@ def inventory_list():
     """
     return a.dopms_sql(sql)
  
+#获取CMS限售后台原表字段
+    # ID = id
+    # variant_id = variant_id
+    # slug = product_slug
+    # dopms_slug为oms后台产品slug
+    # set_country = countriesd
+    # limit = limit
 def dfall_list():
     sql = """
     select id,    variant_id,    origin_slug as slug,    case when slug is NULL then origin_slug else duplicate_slug end as dopms_slug,
@@ -288,13 +261,13 @@ def dfall_list():
  
 #根据产品版本和仓库发货国家进行聚合，取出总销售额，总待发数量，无销量国家数等
 def warehouse_sales_unset(warehouse_inventory, df_all):
+    #如果仓库库存数据为空，则进行初始赋值
     if len(warehouse_inventory) == 0:
         warehouse_inventory['unset']=0
         warehouse_inventory['sales']=0
         warehouse_inventory['combine_country_count'] = 0
         warehouse_inventory['zero_sale_count'] = 0
         warehouse_inventory['combine_country'] = 'None'
- 
     else:
         warehouse_inventory['unset']=0
         warehouse_inventory['sales']=0
@@ -302,6 +275,7 @@ def warehouse_sales_unset(warehouse_inventory, df_all):
         warehouse_inventory['zero_sale_count'] = 0
         warehouse_inventory['combine_country'] = warehouse_inventory['combine_country'].str.split(',')
         for i in range(len(warehouse_inventory.id.unique())):
+            #df_combine判断
             df_combine = df_all.set_country_sep.isin(warehouse_inventory['combine_country'].iloc[i])
             df_product = df_all.dopms_slug == warehouse_inventory['dopms_slug'].iloc[i]
             zero_sale = df_all.sales==0
@@ -310,7 +284,7 @@ def warehouse_sales_unset(warehouse_inventory, df_all):
             warehouse_inventory['combine_country_count'].iloc[i]=len(warehouse_inventory['combine_country'].iloc[i])
             warehouse_inventory['zero_sale_count'].iloc[i]=df_all[df_combine & df_product & zero_sale].sales.count()
  
-#福保较特殊，需单独根据首发区域求unset_qty，再根据全球可发区域求sales
+#上底仓较特殊，需单独根据首发区域求unset_qty，再根据全球可发区域求sales
 def warehouse_sales_unset_fb(warehouse_inventory, df_all):
     if len(warehouse_inventory) == 0:
         warehouse_inventory['unset']=0
@@ -344,83 +318,97 @@ def warehouse_sales_unset_fb(warehouse_inventory, df_all):
 def need_update_df():
     t1 = time.time()
     #logging.info("begin calc result at {t1} ......".format(t1=t1))
- 
+    ############################################################################################    
+    #设定现有仓库与国家对应清单
+        #de_list为德国仓对应发货国家
+        #cn_list为中国仓对应发货国家
+        #uk_list为英国仓对应发货国家
+        #us_list为美国仓，NP+EI两个仓库对应发货国家
+        #jp_list为日本仓对应发货国家
+        #fb_list_pre为上底仓对应唯一发货国家
+        #fb_list_all为上底仓可发货所有国家
+    de_list = ['se','es','si','sk','pt','pl','nl','mt','lu','lt','lv','it','hu','gr','de','fr','fi','ee','dk','cz','hr','bg','be','at','ie']
+    cn_list = ['cn']
+    uk_list = ['gb']
+    us_list = ['us']
+    jp_list = ['jp']
+    fb_list_pre = ['ae','tw','ch','kr','sg','pr','no','nz','mc','mo','li','id','hk','ca','au']
+    fb_list_all = ['gb','se','es','si','sk','pt','pl','nl','mt','lu','lt','lv','it','ie','hu','gr','de','fr','fi','ee','dk','cz','hr','bg','be','at','us','ae','tw','ch','kr','sg','pr','no','nz','mc','mo','li','id','hk','ca','au']
+
+    #设定现有仓库清单对应清单
+        #de_warehouse_list 为德国仓清单
+        #cn_warehouse_list 为中国仓清单
+        #uk_warehouse_list 为英国仓清单
+        #us_warehouse_list 为北美仓清单
+        #jp_warehouse_list 为日本仓清单
+        #fb_warehouse_list 为上底仓清单
+    de_warehouse_list = ['Arvato_DE']
+    cn_warehouse_list = ['TM','TM-SH','TM-BJ','Sinotrans_CN']
+    uk_warehouse_list = ['UK']
+    us_warehouse_list = ['NP','EI']
+    jp_warehouse_list = ['Nippon_JP']
+    fb_warehouse_list = ['Sinotrans_CN']
+
+    warehouse_list = [de_warehouse_list,cn_warehouse_list,uk_warehouse_list,us_warehouse_list,jp_warehouse_list,fb_warehouse_list]
+
+    warehouse_country_list = [de_list,cn_list,uk_list,us_list,jp_list,fb_list_all]
+
+    a=sql_download()
+
+    #取各部分元数据
+    alltable = dfall_list() #获取CMS限售后台原表字段
+    df_inventory = inventory_list() #获取库存数据
+    df_unset = unset_list() #获取订单待发数据
+    df_selling = origin_list()  #获取cms后台限售产品近3个月销售数据
+    ############################################################################################
     #对仓库可发国家做规则设定
-    alltable = dfall_list()
-    df_inventory = inventory_list()
-    df_unset = unset_list()
-    df_selling = origin_list()
- 
- 
     dfin = df_inventory.dropna()
     dfin = dfin.loc[dfin.warehouse.isin (['NP','Sinotrans_CN','TM','UK','TM-SH','TM-BJ','EI','Nippon_JP','Arvato_DE'])]
-    # 将负库存处理为0
+    
     dfin['shipping_country']=None
-    dfin.loc[dfin.quantity<0,'quantity']=0
+    dfin.loc[dfin.quantity<0,'quantity']=0 #将负库存处理为0
  
-    de = dfin.warehouse.isin (de_warehouse_list)
-    cn = dfin.warehouse.isin (cn_warehouse_list)
-    uk = dfin.warehouse.isin (uk_warehouse_list)
-    us = dfin.warehouse.isin (us_warehouse_list)
-    jp = dfin.warehouse.isin (jp_warehouse_list)
-    fb = dfin.warehouse.isin (fb_warehouse_list)
- 
-    dfin['shipping_country'].loc[de]=[de_list]*len(dfin[de])
-    dfin['shipping_country'].loc[cn]=[cn_list]*len(dfin[cn])
-    dfin['shipping_country'].loc[uk]=[uk_list]*len(dfin[uk])
-    dfin['shipping_country'].loc[us]=[us_list]*len(dfin[us])
-    dfin['shipping_country'].loc[jp]=[jp_list]*len(dfin[jp])
-    dfin['shipping_country'].loc[fb]=[fb_list_all]*len(dfin[fb])
+    for i in range(len(warehouse_country_list)):    
+        filter1 = dfin.warehouse.isin(warehouse_list[i])
+        dfin['shipping_country'].loc[filter1] = [warehouse_country_list[i]]*len(dfin[filter1])
  
     ############################################################################################
     #对各仓库库存进行处理
+
     dfin['suitable_country'] = dfin['suitable_country'].str.split(',')
     dfin['set_country'] = dfin['set_country'].str.split(',')
-    dfin.head()
+    #以set_country即限售商品设置的国家为准，取仓库发货国家与产品适用国家的交集，整理库存清单
     dfin_clean=dfin[[len(set(a) & set(b) & set(c))>0 for a, b,c in zip(dfin['suitable_country'],dfin['set_country'],dfin['shipping_country'])]].copy()
-    #dfin_clean=dfin_clean[dfin_clean.quantity>0]
+   
  
-    #需要补充首选仓无库存的倒数停卖项
+    #补充首选仓无库存的倒数停卖项
     data = dfin_clean.copy()
+    prior_country_list = ['us','de','gb']
+    prior_warehouse_code_list = ['EI','DE','UK']
+    prior_warehouse_list = [us_warehouse_list,de_warehouse_list,uk_warehouse_list]
+    prior_warehouse_country_list = [us_list,de_list,uk_list]
 
-    filter_us1 = data['set_country'].astype('str').str.contains('us')
-    filter_us2 = data['warehouse'].isin(us_warehouse_list)
-    filter_us3 = data['id'].isin(data[filter_us1 & filter_us2].id)
-    filter_us4 = data['id'].isin(data[filter_us1 & -filter_us2].id)
-    filter_us = -filter_us3 & filter_us4
-
-    filter_de1 = data['set_country'].astype('str').str.contains('de')
-    filter_de2 = data['warehouse'].isin(de_warehouse_list)
-    filter_de3 = data['id'].isin(data[filter_de1 & filter_de2].id)
-    filter_de4 = data['id'].isin(data[filter_de1 & -filter_de2].id)
-    filter_de = -filter_de3 & filter_de4
-
-    filter_uk1 = data['set_country'].astype('str').str.contains('gb')
-    filter_uk2 = data['warehouse'].isin(uk_warehouse_list)
-    filter_uk3 = data['id'].isin(data[filter_uk1 & filter_uk2].id)
-    filter_uk4 = data['id'].isin(data[filter_uk1 & -filter_uk2].id)
-    filter_uk = -filter_uk3 & filter_uk4
-
-    data.loc[filter_us,'shipping_country'] = ",".join(us_list)
-    data.loc[filter_de,'shipping_country'] = ",".join(de_list)
-    data.loc[filter_uk,'shipping_country'] = ",".join(uk_list)
-    data.loc[filter_us,'suitable_country'] = ",".join(us_list)
-    data.loc[filter_de,'suitable_country'] = ",".join(de_list)
-    data.loc[filter_uk,'suitable_country'] = ",".join(uk_list)
-    data.loc[filter_us,'warehouse'] = 'EI'
-    data.loc[filter_de,'warehouse'] = 'DE'
-    data.loc[filter_uk,'warehouse'] = 'UK'
-    data['suitable_country'] = data['suitable_country'].str.split(',')
-    data['shipping_country'] = data['shipping_country'].str.split(',')
-    data['quantity'] = 0
-    data = data[filter_us | filter_de | filter_uk]
-    dfin_clean = pd.concat([dfin_clean,data],sort=False) 
-
-
-
- 
+    data_df = []
+    for i in range(len(prior_country_list)):
+        filter1 = data['set_country'].astype('str').str.contains(prior_country_list[i])
+        filter2 = data['warehouse'].isin(prior_warehouse_list[i])
+        filter3 = data['id'].isin(data[filter1 & filter2].id)
+        filter4 = data['id'].isin(data[filter1 & -filter2].id)
+        filter_total = -filter3 & filter4
+        data.loc[filter_total,'shipping_country'] = ",".join(prior_warehouse_country_list[i])
+        data.loc[filter_total,'suitable_country'] = ",".join(prior_warehouse_country_list[i])
+        data.loc[filter_total,'warehouse'] = prior_warehouse_code_list[i]
+        data_df.append(data[filter_total])
+    data_df = pd.concat(data_df,sort=False)
+    data_df['suitable_country'] = data_df['suitable_country'].str.split(',')
+    data_df['shipping_country'] = data_df['shipping_country'].str.split(',')
+    data_df['quantity'] = 0
+    dfin_clean = pd.concat([data_df,dfin_clean],sort=False)
+    
+    #combine_country为产品适用国家与仓库发货国家的交集
     dfin_clean['combine_country']= [','.join(list(set(a)&set(b))) for a,b in zip(dfin_clean['suitable_country'],dfin_clean['shipping_country'])]
  
+
     dfin_clean_de = dfin_clean[dfin_clean.warehouse.isin(de_warehouse_list)]
     dfin_clean_cn = dfin_clean[dfin_clean.warehouse.isin(cn_warehouse_list)]
     dfin_clean_uk = dfin_clean[dfin_clean.warehouse.isin(uk_warehouse_list)]
@@ -428,6 +416,9 @@ def need_update_df():
     dfin_clean_jp = dfin_clean[dfin_clean.warehouse.isin(jp_warehouse_list)]
     dfin_clean_fb = dfin_clean[dfin_clean.warehouse.isin(fb_warehouse_list)]
     #多仓库可用库存求和
+    #dfin_clean_list = [dfin_clean_de,dfin_clean_cn,dfin_clean_uk,dfin_clean_us,dfin_clean_jp,dfin_clean_fb]
+    #for i in range(len(dfin_clean_list)):
+    #    dfin_clean_list[i] = dfin_clean_list[i].groupby(['id','variant_id','slug','dopms_slug','combine_country']).agg({'quantity': 'sum' }).reset_index()
  
     dfin_clean_de = dfin_clean_de.groupby(['id','variant_id','slug','dopms_slug','combine_country']).agg({'quantity': 'sum' })
     dfin_clean_de = dfin_clean_de.reset_index()
@@ -442,8 +433,7 @@ def need_update_df():
     dfin_clean_fb = dfin_clean_fb.groupby(['id','variant_id','slug','dopms_slug','combine_country']).agg({'quantity': 'sum' })
     dfin_clean_fb = dfin_clean_fb.reset_index()
  
- 
-    #核验是否存在重复ID，可能存在倒数停卖设置错误
+    #核验是否存在重复ID，可能存在原始料号设置国家群组不一致
  
     print(len(dfin_clean_fb.id.unique()),len(dfin_clean_fb.id))
     print(len(dfin_clean_de.id.unique()),len(dfin_clean_de.id))
@@ -452,18 +442,21 @@ def need_update_df():
     print(len(dfin_clean_uk.id.unique()),len(dfin_clean_uk.id))
     print(len(dfin_clean_jp.id.unique()),len(dfin_clean_jp.id))
  
-    duplicated_fb = dfin_clean_fb.duplicated(subset=['id'], keep=False)
-    print(dfin_clean_fb[duplicated_fb])
+    duplicated_cn = dfin_clean_cn.duplicated(subset=['id'], keep=False)
+    print(dfin_clean_cn[duplicated_cn])
  
+    ############################################################################################ 
     #取倒数停卖全表
+    #将cms限售产品原表的国家组拆分为多行
     df_all = alltable.set_index(['id','variant_id','slug','limit','dopms_slug']).stack().str.split(',', expand=True).stack().reset_index(-1, drop=True).reset_index()
     del df_all['level_5']
     df_all.columns = ['id','variant_id','slug','limit','dopms_slug','set_country_sep']
  
-    #取出存在重复设置的值
+    #取出存在重复设置的值,可能存在倒数停卖设置错误
     duplicated_error = df_all.duplicated(subset=['variant_id','slug','dopms_slug','set_country_sep'], keep=False)
-    duplicated_list=df_all[duplicated_error].sort_values(by = ['dopms_slug','set_country_sep'],ascending = True)
- 
+    duplicated_list = df_all[duplicated_error].sort_values(by = ['dopms_slug','set_country_sep'],ascending = True)
+    print(duplicated_list)
+
     #聚合销量表
     df_all_sell = pd.merge(df_all,df_selling,left_on = ['id','variant_id','dopms_slug','set_country_sep'],
              right_on = ['id','variant_id','dopms_slug','selling_country'],how='left')
@@ -606,28 +599,7 @@ def need_update_df():
     df_result_raw= df_result_raw.merge(rate_sum,on=['variant_id','combine_country_fb'],how='left')
     df_result_raw.loc[(fb_con),'result_fb_warehouse']=(df_result_raw.loc[(fb_con),'quantity_fb']-df_result_raw.loc[(fb_con),'unset_fb'])*(df_result_raw.loc[(fb_con),'rate']/df_result_raw.loc[(fb_con),'rate_sum'])
 
-    #部分国家无销量，按照国家组
-    #df_result_raw.loc[(fb_con),'result_fb_warehouse']=(df_result_raw.loc[(fb_con),'quantity_fb']-df_result_raw.loc[(fb_con),'unset_fb'])*(df_result_raw.loc[(fb_con),'rate']/df_result_raw.loc[(fb_con & zero_sale_con_fb),'rate_sum'])
-    ####全部国家无销量，则均分所有库存[Deprecated]
-    ####df_result_raw.loc[(fb_con & zero_sale_con_fb),'result_fb_warehouse']=df_result_raw['quantity_fb']/df_result_raw['combine_country_count_fb']
-    
-    #部分国家有销量
-    #且可用库存数小于等于国家个数，则按历史业绩占比进行占比分配；
-    #filter1 = -zero_sale_con_fb & fb_con & fb_notEnough
-    #df_result_raw.loc[filter1,'result_fb_warehouse']=(df_result_raw.loc[filter1,
-    #'quantity_fb'] - df_result_raw.loc[filter1,
-    #'unset_fb']) * (df_result_raw.loc[filter1,'rate']/df_result_raw.loc[filter1,'rate_sum'])
-    #且可用库存数大于国家个数，则针对没有销量的国家分配库存1，剩余按历史销售占比分配
-    #filter2 = -zero_sale_con_fb & fb_con & -fb_notEnough
-    #df_result_raw.loc[filter2,'result_fb_warehouse']=1+(df_result_raw['quantity_fb']-df_result_raw['unset_fb']-df_result_raw['combine_country_count_fb'])*(df_result_raw['sales_sep']/df_result_raw['sales_fb'])
 
-    #[Deprecated]
-    ####部分国家有销量
-    ####且可用库存数小于等于国家个数，则只按历史销售占比分配；
-    ####df_result_raw.loc[(-zero_sale_con_fb & fb_con & fb_notEnough),'result_fb_warehouse'] = (df_result_raw['quantity_fb']-df_result_raw['unset_fb'])*(df_result_raw['sales_sep']/df_result_raw['sales_fb'])
-    ####且可用库存数大于国家个数，则针对没有销量的国家分配库存1，剩余按历史销售占比分配
-    ####df_result_raw.loc[(fb_con & ~fb_notEnough & zero_sale_country),'result_fb_warehouse']=1
-    ####df_result_raw.loc[(fb_con & ~fb_notEnough & ~zero_sale_con_fb),'result_fb_warehouse']=1+(df_result_raw['quantity_fb']-df_result_raw['unset_fb']-df_result_raw['combine_country_count_fb'])*(df_result_raw['sales_sep']/df_result_raw['sales_fb'])
  
     #处理FB小于零的部分，并求和得到最终各国家数据，汇总得单个ID最终值
     fb_below_zero=df_result_raw['result_fb_warehouse']<0
@@ -654,9 +626,14 @@ def need_update_df():
     t2 = time.time()
     #logging.info("end calc result at {t1} to {t2} total: {diff}".format(t1=t1, t2=t2, diff=(t2-t1)))
     return df_result
- 
+
+#%%
+
  
 #%%
+#运行计算
 x = need_update_df()
  
-# %%
+
+#%%
+1+1
