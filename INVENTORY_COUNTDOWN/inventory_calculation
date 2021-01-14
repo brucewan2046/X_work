@@ -152,7 +152,7 @@ def origin_list():
     """
     return a.dopms_sql(sql)
  
-#获取订单待发数据
+#获取订单待发数据(包含未生成发货单数据以及未占用库存数据)
     # dopms_slug为oms后台对应产品slug
     # selling_country为各销售国家二字简码
     # qty为待发数量   
@@ -259,13 +259,34 @@ def dfall_list():
     """
     return a.dopms_sql(sql)
  
-#根据产品版本和仓库发货国家进行聚合，取出总销售额，总待发数量，无销量国家数等
+def battery_product_list():
+    sql = """
+    SELECT  p.slug,pv.country,pv.ean,cpv.cp,p.commodity_code as hs_code,p.compose,p.pi_name_cn,p.pi_name_en,p.have_battery,p.battery_type,p.uuid,
+        p.weight,p.published,p.published_at,p.product_group_id,p.product_group_position,p.tmall_title,
+        p.tmall_variant_title,p.invoice_title,p.catalogue,p.unit_quantity,p.verify
+
+        FROM products p
+        LEFT  JOIN product_versions pv ON pv.product_id = p.id 
+        LEFT  JOIN cpinfos cpv ON cpv.product_version_id = pv.id
+
+        where cpv.cp is not NULL
+        and battery_type ='965'
+        group by  p.slug,pv.country,pv.ean,cpv.cp,p.commodity_code,p.compose,p.pi_name_cn,p.pi_name_en,p.have_battery,p.battery_type,p.uuid,
+        p.weight,p.published,p.published_at,p.product_group_id,p.product_group_position,p.tmall_title,
+        p.tmall_variant_title,p.invoice_title,p.catalogue,p.unit_quantity,p.verify
+    """
+    return a.dopms_sql(sql)
+
+
+
+# 将df_all清单上的销量/待发数据转移至warehouse_inventory表单上
+# 根据产品版本和仓库发货国家进行聚合，取出总销售额，总待发数量，无销量国家数等
 def warehouse_sales_unset(warehouse_inventory, df_all):
     #如果仓库库存数据为空，则进行初始赋值
     if len(warehouse_inventory) == 0:
         warehouse_inventory['unset']=0
         warehouse_inventory['sales']=0
-        warehouse_inventory['combine_country_count'] = 0
+        warehouse_inventory['combine_country_count'] = 0 
         warehouse_inventory['zero_sale_count'] = 0
         warehouse_inventory['combine_country'] = 'None'
     else:
@@ -275,14 +296,18 @@ def warehouse_sales_unset(warehouse_inventory, df_all):
         warehouse_inventory['zero_sale_count'] = 0
         warehouse_inventory['combine_country'] = warehouse_inventory['combine_country'].str.split(',')
         for i in range(len(warehouse_inventory.id.unique())):
-            #df_combine判断
+            #df_combine判断cms限售产品设置的单个国家在仓库可发国家和商品适用国家中
             df_combine = df_all.set_country_sep.isin(warehouse_inventory['combine_country'].iloc[i])
+            #df_product判断cms限售产品slug与仓库库存对应slug一致
             df_product = df_all.dopms_slug == warehouse_inventory['dopms_slug'].iloc[i]
+            #zero_sale判断cms限售产品对应的单个国家销量为0
             zero_sale = df_all.sales==0
+            #将国家与产品一致仓库库存表增加销售数据
             warehouse_inventory['sales'].iloc[i]=df_all[df_combine & df_product].groupby(['dopms_slug']).agg({'sales': 'sum' }).sales[0]
+            #将国家与产品一致仓库库存表增加待发数据
             warehouse_inventory['unset'].iloc[i]=df_all[df_combine & df_product].groupby(['dopms_slug']).agg({'unset_qty': 'sum' }).unset_qty[0]
-            warehouse_inventory['combine_country_count'].iloc[i]=len(warehouse_inventory['combine_country'].iloc[i])
-            warehouse_inventory['zero_sale_count'].iloc[i]=df_all[df_combine & df_product & zero_sale].sales.count()
+            warehouse_inventory['combine_country_count'].iloc[i]=len(warehouse_inventory['combine_country'].iloc[i]) #记录组合国家群中国家个数
+            warehouse_inventory['zero_sale_count'].iloc[i]=df_all[df_combine & df_product & zero_sale].sales.count() #记录销售为零的国家个数
  
 #上底仓较特殊，需单独根据首发区域求unset_qty，再根据全球可发区域求sales
 def warehouse_sales_unset_fb(warehouse_inventory, df_all):
@@ -304,12 +329,14 @@ def warehouse_sales_unset_fb(warehouse_inventory, df_all):
             zero_sale = df_all.sales==0
             df_fb_pre = df_all.set_country_sep.isin(fb_list_pre)
             warehouse_inventory['sales'].iloc[i]=df_all[df_combine & df_product].groupby(['dopms_slug']).agg({'sales': 'sum' }).sales[0]
+            #将上底仓首选的国家区域待发数据汇总
             try:
                 a = df_all[df_combine & df_product & df_fb_pre].groupby(['dopms_slug']).agg({'unset_qty': 'sum' }).unset_qty[0]
             except :
                 a=0
                 #pass
             warehouse_inventory['unset'].iloc[i] = a
+            
             warehouse_inventory['combine_country_count'].iloc[i]=len(warehouse_inventory['combine_country'].iloc[i])
             warehouse_inventory['zero_sale_count'].iloc[i]=df_all[df_combine & df_product & zero_sale].sales.count()
  
@@ -318,7 +345,11 @@ def warehouse_sales_unset_fb(warehouse_inventory, df_all):
 def need_update_df():
     t1 = time.time()
     #logging.info("begin calc result at {t1} ......".format(t1=t1))
-    ############################################################################################    
+    ############################################################################################  
+    #设定各个国家销售占比
+    default_sale_rate = {'set_country_sep':['fr', 'sk', 'si', 'mo', 'fi', 'nz', 'bg', 'lu', 'hr', 'sg', 'lt','cn', 'ee', 'be', 'at', 'cz', 'dk', 'mt', 'ae', 'pr', 'mc', 'de','nl', 'gb', 'id', 'ch', 'li', 'se', 'tw', 'ie', 'au', 'no', 'ca','pt', 'hu', 'jp', 'pl', 'us', 'hk', 'it', 'lv', 'es', 'gr', 'kr'],'rate':[3.11, 0.02, 0.07, 0.01, 0.11, 0.04, 0.03, 0.06, 0.06, 0.09, 0.02, 18.23, 0.03, 0.33, 0.59, 0.05, 0.13, 0.03, 0.03, 0.23, 0.01, 5.99, 0.29, 5.12, 0.0, 0.18, 0.0, 0.23, 0.29, 0.76, 3.17, 0.08, 3.81, 0.33, 0.1, 3.63, 0.14, 47.19, 0.17, 1.99, 0.03, 2.01, 0.16, 1.06]}
+    default_sale_rate = pd.DataFrame(default_sale_rate)  
+
     #设定现有仓库与国家对应清单
         #de_list为德国仓对应发货国家
         #cn_list为中国仓对应发货国家
@@ -360,6 +391,7 @@ def need_update_df():
     df_inventory = inventory_list() #获取库存数据
     df_unset = unset_list() #获取订单待发数据
     df_selling = origin_list()  #获取cms后台限售产品近3个月销售数据
+    battery_product = battery_product_list() #获取965产品清单
     ############################################################################################
     #对仓库可发国家做规则设定
     dfin = df_inventory.dropna()
@@ -455,6 +487,8 @@ def need_update_df():
     #取出存在重复设置的值,可能存在倒数停卖设置错误
     duplicated_error = df_all.duplicated(subset=['variant_id','slug','dopms_slug','set_country_sep'], keep=False)
     duplicated_list = df_all[duplicated_error].sort_values(by = ['dopms_slug','set_country_sep'],ascending = True)
+    print('##################################################################')
+    print('There is a wrong set list as below within cms, plz check and reset')
     print(duplicated_list)
 
     #聚合销量表
@@ -463,7 +497,7 @@ def need_update_df():
     df_all_sell = df_all_sell.fillna(0)
     df_all_sell = df_all_sell.drop(columns=['set_country','Limited_Qty_Old'],axis=1)
  
-    #聚合待分仓表
+    #聚合待分产品数表
     df_all_sell_unset = pd.merge(df_all_sell,df_unset,left_on=['dopms_slug','selling_country'],right_on=['dopms_slug','selling_country'],how = 'left')
     df_all_sell_unset.columns=['id', 'variant_id', 'slug', 'limit', 'dopms_slug', 'set_country_sep',
            'selling_country', 'sales', 'unset_qty']
@@ -552,16 +586,6 @@ def need_update_df():
     fb_notEnough = (df_result_raw['quantity_fb']-df_result_raw['unset_fb']-df_result_raw['combine_country_count_fb'])<=0
  
     ##确认计算逻辑
-    ### UK仓
-    #全部国家无销量，则均分所有库存
-    df_result_raw.loc[(uk_con & zero_sale_con_uk),'result_other_warehouse']=df_result_raw['quantity_uk']/df_result_raw['combine_country_count_uk']
-    #部分国家有销量
-    #且可用库存数小于国家个数，则只按历史销售占比分配；
-    df_result_raw.loc[(-zero_sale_con_uk & uk_con & uk_notEnough),'result_other_warehouse'] = (df_result_raw['quantity_uk']-df_result_raw['unset_uk'])*(df_result_raw['sales_sep']/df_result_raw['sales_uk'])
-    #且可用库存数大于等于国家个数，则针对没有销量的国家分配库存1，剩余按历史销售占比分配
-    df_result_raw.loc[(uk_con & ~uk_notEnough & zero_sale_country),'result_other_warehouse']=1
-    df_result_raw.loc[(uk_con & ~uk_notEnough & ~zero_sale_con_uk),'result_other_warehouse']=1+(df_result_raw['quantity_uk']-df_result_raw['unset_uk']-df_result_raw['combine_country_count_uk'])*(df_result_raw['sales_sep']/df_result_raw['sales_uk'])
- 
     ### DE仓
     #全部国家无销量，则均分所有库存
     df_result_raw.loc[(de_con & zero_sale_con_de),'result_other_warehouse']=df_result_raw['quantity_de']/df_result_raw['combine_country_count_de']
@@ -572,32 +596,34 @@ def need_update_df():
     df_result_raw.loc[(de_con & ~de_notEnough & zero_sale_country),'result_other_warehouse']=1
     df_result_raw.loc[(de_con & ~de_notEnough & ~zero_sale_con_de),'result_other_warehouse']=1+(df_result_raw['quantity_de']-df_result_raw['unset_de']-df_result_raw['combine_country_count_de'])*(df_result_raw['sales_sep']/df_result_raw['sales_de'])
  
- 
+    #国家专属仓库，无需特殊处理  
     ### US仓
-    #全部国家无销量，则均分所有库存
     df_result_raw.loc[(us_con),'result_other_warehouse']=df_result_raw['quantity_us']-df_result_raw['unset_us']
- 
- 
     ### JP仓
-    #国家专属仓库，无需特殊处理【因分仓重构，不需要再处理为分仓库存】
     df_result_raw.loc[(jp_con),'result_other_warehouse']=df_result_raw['quantity_jp']-df_result_raw['unset_jp']
- 
     ### CN仓
-    #全部国家无销量，则均分所有库存
     df_result_raw.loc[(cn_con),'result_other_warehouse']=df_result_raw['quantity_cn']-df_result_raw['unset_cn']
+    ### UK仓
+    df_result_raw.loc[(uk_con),'result_other_warehouse']=df_result_raw['quantity_uk']-df_result_raw['unset_uk']
  
     ### FB仓
     #全部国家无销量，则按历史业绩占比进行占比分配
-    default_sale_rate = {'set_country_sep':['fr', 'sk', 'si', 'mo', 'fi', 'nz', 'bg', 'lu', 'hr', 'sg', 'lt','cn', 'ee', 'be', 'at', 'cz', 'dk', 'mt', 'ae', 'pr', 'mc', 'de','nl', 'gb', 'id', 'ch', 'li', 'se', 'tw', 'ie', 'au', 'no', 'ca','pt', 'hu', 'jp', 'pl', 'us', 'hk', 'it', 'lv', 'es', 'gr', 'kr'],'rate':[3.11, 0.02, 0.07, 0.01, 0.11, 0.04, 0.03, 0.06, 0.06, 0.09, 0.02, 18.23, 0.03, 0.33, 0.59, 0.05, 0.13, 0.03, 0.03, 0.23, 0.01, 5.99, 0.29, 5.12, 0.0, 0.18, 0.0, 0.23, 0.29, 0.76, 3.17, 0.08, 3.81, 0.33, 0.1, 3.63, 0.14, 47.19, 0.17, 1.99, 0.03, 2.01, 0.16, 1.06]}
-    default_sale_rate = pd.DataFrame(default_sale_rate)
     df_result_raw['combine_country_fb']=df_result_raw['combine_country_fb'].astype('str')
     df_result_raw = df_result_raw.merge(default_sale_rate,on='set_country_sep',how='left')
 
-    rate_sum = df_result_raw[fb_con].groupby(by=['variant_id','combine_country_fb']).agg({'rate':'sum'}).reset_index()
+    #特殊属性产品如第三方进口产品/电池类产品等,针对区域进行排除
+    order_965 = df_result_raw['dopms_slug'].isin(battery_product.slug.unique())
+    zone_filter = df_result_raw['set_country_sep'].isin(de_list)
+    df_result_raw.loc[(fb_con & order_965 & zone_filter ),'result_fb_warehouse'] = 0
+    
+    #剩余倒数停卖项筛选条件：
+    fb_rest = (fb_con & -order_965)|(fb_con & order_965 & -zone_filter)
+
+    rate_sum = df_result_raw[fb_rest].groupby(by=['variant_id','combine_country_fb']).agg({'rate':'sum'}).reset_index()
     rate_sum.rename(columns={'rate':'rate_sum'},inplace=True)
 
     df_result_raw= df_result_raw.merge(rate_sum,on=['variant_id','combine_country_fb'],how='left')
-    df_result_raw.loc[(fb_con),'result_fb_warehouse']=(df_result_raw.loc[(fb_con),'quantity_fb']-df_result_raw.loc[(fb_con),'unset_fb'])*(df_result_raw.loc[(fb_con),'rate']/df_result_raw.loc[(fb_con),'rate_sum'])
+    df_result_raw.loc[fb_rest,'result_fb_warehouse']=(df_result_raw.loc[fb_rest,'quantity_fb']-df_result_raw.loc[fb_rest,'unset_fb'])*(df_result_raw.loc[fb_rest,'rate']/df_result_raw.loc[fb_rest,'rate_sum'])
 
 
  
@@ -608,15 +634,14 @@ def need_update_df():
     df_result_raw['result_final']=df_result_raw['result_other_warehouse']+df_result_raw['result_fb_warehouse']
  
  
-    #特殊属性产品的计算规则可以在后续完善，如第三方进口产品/电池类产品等
-    df_result_raw.columns
-    df_result=df_result_raw.groupby(['id', 'variant_id', 'slug', 'limit', 'dopms_slug']).agg({'result_final':'sum','sales_sep':'sum'})
+    
+    df_result=df_result_raw.groupby(['id', 'variant_id', 'slug', 'limit', 'dopms_slug']).agg({'result_final':'sum','sales_sep':'sum'}).reset_index()
  
-    df_result=df_result.reset_index()
     df_result['limit_new'] = 0
     df_result['limit_new'] = df_result['result_final']
-    #还需设置跳过无需变动的选项 100000 / 0
-    #filter_set=df_result.limit.isin(['0'])
+    #添加原始国家组信息
+    df_result = df_result.merge(alltable[['id','set_country']],on='id',how='left')
+
     filter_set2 =df_result.limit_new.isin(['inf'])
  
     df_result = df_result[ ~filter_set2]
